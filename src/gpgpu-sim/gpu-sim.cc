@@ -702,6 +702,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
   option_parser_register(opp, "-gpgpu_flush_l2_cache", OPT_BOOL,
                          &gpgpu_flush_l2_cache,
                          "Flush L2 cache at the end of each kernel call", "0");
+  option_parser_register(opp, "-gpgpu_invalidate_l2_cache", OPT_BOOL,
+                         &gpgpu_invalidate_l2_cache,
+                         "Invalidate L2 cache at the end of each kernel call", "0");
   option_parser_register(
       opp, "-gpgpu_deadlock_detect", OPT_BOOL, &gpu_deadlock_detect,
       "Stop the simulation at deadlock (1=on (default), 0=off)", "1");
@@ -2147,6 +2150,26 @@ void gpgpu_sim::cycle() {
       }
     }
 
+    if (m_config.gpgpu_invalidate_l2_cache) {
+      assert(!m_config.gpgpu_flush_l2_cache);
+      if (!m_config.gpgpu_flush_l1_cache) {
+        for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
+          if (m_cluster[i]->get_not_completed() != 0) {
+            all_threads_complete = 0;
+            break;
+          }
+        }
+      }
+      if (all_threads_complete && !m_memory_config->m_L2_config.disabled()) {
+        if (m_memory_config->m_L2_config.get_num_lines()) {
+          int dlc = 0;
+          for (unsigned i = 0; i < m_memory_config->m_n_mem; i++) {
+            dlc = m_memory_sub_partition[i]->invalidateL2();
+            assert(dlc == 0);  // TODO: need to model actual writes to DRAM here
+          }
+        }
+      }
+    }
     if (!(gpu_sim_cycle % m_config.gpu_stat_sample_freq)) {
       time_t days, hrs, minutes, sec;
       time_t curr_time;
