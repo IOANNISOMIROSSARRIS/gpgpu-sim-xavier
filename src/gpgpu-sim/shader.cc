@@ -1960,18 +1960,29 @@ void shader_core_ctx::writeback() {
      * no stalling).
      */
 
-    m_operand_collector.writeback(*pipe_reg);
-    unsigned warp_id = pipe_reg->warp_id();
-    m_scoreboard->releaseRegisters(pipe_reg);
-    m_warp[warp_id]->dec_inst_in_pipeline();
-    warp_inst_complete(*pipe_reg);
-    m_gpu->gpu_sim_insn_last_update_sid = m_sid;
-    m_gpu->gpu_sim_insn_last_update = m_gpu->gpu_sim_cycle;
-    m_last_inst_gpu_sim_cycle = m_gpu->gpu_sim_cycle;
-    m_last_inst_gpu_tot_sim_cycle = m_gpu->gpu_tot_sim_cycle;
-    pipe_reg->clear();
-    preg = m_pipeline_reg[EX_WB].get_ready();
-    pipe_reg = (preg == NULL) ? NULL : *preg;
+    if (m_operand_collector.writeback(*pipe_reg)) {
+      unsigned warp_id = pipe_reg->warp_id();
+      m_scoreboard->releaseRegisters(pipe_reg);
+      m_warp[warp_id]->dec_inst_in_pipeline();
+      warp_inst_complete(*pipe_reg);
+      m_gpu->gpu_sim_insn_last_update_sid = m_sid;
+      m_gpu->gpu_sim_insn_last_update = m_gpu->gpu_sim_cycle;
+      m_last_inst_gpu_sim_cycle = m_gpu->gpu_sim_cycle;
+      m_last_inst_gpu_tot_sim_cycle = m_gpu->gpu_tot_sim_cycle;
+      pipe_reg->clear();
+      preg = m_pipeline_reg[EX_WB].get_ready();
+      pipe_reg = (preg == NULL) ? NULL : *preg;
+    } else {
+      // Register bank conflict: unlike stock GPGPU-Sim (which ignores this
+      // return value entirely, see comment above), we treat a failed
+      // writeback as a real stall. pipe_reg is deliberately left uncleared
+      // so get_ready() finds it again next cycle -- the operand collector's
+      // per-bank busy state only resets via its own step() function, called
+      // once per core per cycle before writeback() runs again, so nothing
+      // else in this drain loop can succeed differently this cycle either.
+      m_stats->gpu_reg_bank_conflict_stalls++;
+      break;
+    }
   }
 }
 
@@ -2551,12 +2562,22 @@ pipelined_simd_unit::pipelined_simd_unit(register_set *result_port,
 }
 
 void pipelined_simd_unit::cycle() {
+  bool stage0_clear_this_cycle = true;
   if (!m_pipeline_reg[0]->empty()) {
-    m_result_port->move_in(m_pipeline_reg[0]);
-    assert(active_insts_in_pipeline > 0);
-    active_insts_in_pipeline--;
+    if (m_result_port->has_free()) {
+      m_result_port->move_in(m_pipeline_reg[0]);
+      assert(active_insts_in_pipeline > 0);
+      active_insts_in_pipeline--;
+    } else {
+      // Result port (e.g. EX_WB) has no free slot this cycle -- leave the
+      // completed instruction where it is and retry next cycle. Do not
+      // shift the rest of this unit's internal pipeline forward either,
+      // since stage 0 is still occupied and shifting would silently
+      // overwrite it with stage 1's contents.
+      stage0_clear_this_cycle = false;
+    }
   }
-  if (active_insts_in_pipeline) {
+  if (active_insts_in_pipeline && stage0_clear_this_cycle) {
     for (unsigned stage = 0; (stage + 1) < m_pipeline_depth; stage++)
       move_warp(m_pipeline_reg[stage], m_pipeline_reg[stage + 1]);
   }
