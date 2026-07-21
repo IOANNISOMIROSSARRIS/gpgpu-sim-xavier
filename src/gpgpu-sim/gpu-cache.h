@@ -562,6 +562,7 @@ class cache_config {
     m_config_stringPrefL1 = NULL;
     m_config_stringPrefShared = NULL;
     m_data_port_width = 0;
+    m_global_64bit_port_multiplier = 1;
     m_set_index_function = LINEAR_SET_FUNCTION;
     m_is_streaming = false;
     m_wr_percent = 0;
@@ -842,6 +843,14 @@ class cache_config {
   char *m_config_stringPrefShared;
   FuncCache cache_status;
   unsigned m_wr_percent;
+  // (Xavier port) multiplier applied to the data-port occupancy of 64-bit
+  // global reads. Xavier's GV10B LSU drains 64-bit global loads at ~1/3-1/4 the
+  // sector throughput of 32-bit at L1/L2, a trait absent on GV100 (which this
+  // model was tuned against). Set >1 only on the Xavier config; default 1
+  // leaves all other cards bit-identical to stock. Registered as a standalone
+  // option (like m_wr_percent above), NOT part of the packed -gpgpu_cache:dlN
+  // string, so no existing config file changes.
+  unsigned m_global_64bit_port_multiplier;
   write_allocate_policy_t get_write_allocate_policy() {
     return m_write_alloc_policy;
   }

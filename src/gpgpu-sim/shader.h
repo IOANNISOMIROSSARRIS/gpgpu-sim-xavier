@@ -1474,6 +1474,12 @@ class ldst_unit : public pipelined_simd_unit {
   unsigned long long m_last_inst_gpu_tot_sim_cycle;
 
   std::vector<std::deque<mem_fetch *>> l1_latency_queue;
+  // (Xavier port) cycles remaining during which this LSU refuses to admit a
+  // further global access, because it is still draining a 64-bit one. Xavier's
+  // GV10B LSU issues 64-bit global sectors at ~1/3-1/4 the rate of 32-bit ones
+  // (measured; absent on GV100, which this model was tuned against). 0 when
+  // the multiplier is 1, i.e. for every non-Xavier config.
+  unsigned m_l1_64bit_busy = 0;
   void L1_latency_queue_cycle();
 };
 

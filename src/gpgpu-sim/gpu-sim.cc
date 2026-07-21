@@ -248,6 +248,12 @@ void memory_config::reg_options(class OptionParser *opp) {
   option_parser_register(opp, "-l2_ideal", OPT_BOOL, &l2_ideal,
                          "Use a ideal L2 cache that always hit", "0");
   option_parser_register(
+      opp, "-gpgpu_l2_64bit_port_multiplier", OPT_UINT32,
+      &m_L2_config.m_global_64bit_port_multiplier,
+      "Multiplier on L2 data-port occupancy for 64-bit global reads (Xavier "
+      "GV10B LSU trait; 1 = stock)",
+      "1");
+  option_parser_register(
       opp, "-gpgpu_cache:dl2", OPT_CSTR, &m_L2_config.m_config_string,
       "unified banked L2 data cache config "
       " {<sector?>:<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>:<set_"
@@ -370,6 +376,11 @@ void shader_core_config::reg_options(class OptionParser *opp) {
                          "l1 banks hashing function", "0");
   option_parser_register(opp, "-gpgpu_l1_latency", OPT_UINT32,
                          &m_L1D_config.l1_latency, "L1 Hit Latency", "1");
+  option_parser_register(opp, "-gpgpu_l1_64bit_port_multiplier", OPT_UINT32,
+                         &m_L1D_config.m_global_64bit_port_multiplier,
+                         "Multiplier on L1 data-port occupancy for 64-bit "
+                         "global reads (Xavier GV10B LSU trait; 1 = stock)",
+                         "1");
   option_parser_register(opp, "-gpgpu_smem_latency", OPT_UINT32, &smem_latency,
                          "smem Latency", "3");
   option_parser_register(opp, "-gpgpu_cache:dl1PrefL1", OPT_CSTR,

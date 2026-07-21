@@ -2077,6 +2077,12 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue_l1cache(
   if (inst.accessq_empty()) return result;
 
   if (m_config->m_L1D_config.l1_latency > 0) {
+    // (Xavier port) still draining a previously-admitted 64-bit global access:
+    // admit nothing this cycle. See m_l1_64bit_busy in shader.h.
+    if (m_l1_64bit_busy > 0) {
+      return COAL_STALL;
+    }
+
     for (unsigned int j = 0; j < m_config->m_L1D_config.l1_banks;
          j++) {  // We can handle at max l1_banks reqs per cycle
 
@@ -2092,6 +2098,17 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue_l1cache(
       if ((l1_latency_queue[bank_id][m_config->m_L1D_config.l1_latency - 1]) ==
           NULL) {
         l1_latency_queue[bank_id][m_config->m_L1D_config.l1_latency - 1] = mf;
+        // (Xavier port) a 64-bit global read occupies the LSU's 64-bit issue
+        // path for `mult` cycles rather than 1. m_inst is empty for writeback
+        // accesses (no originating instruction), so guard before reading it.
+        {
+          const unsigned mult =
+              m_config->m_L1D_config.m_global_64bit_port_multiplier;
+          if (mult > 1 && mf->get_access_type() == GLOBAL_ACC_R &&
+              !mf->get_inst().empty() && mf->get_inst().data_size == 8) {
+            m_l1_64bit_busy = mult - 1;
+          }
+        }
 
         if (mf->get_inst().is_store()) {
           unsigned inc_ack =
@@ -2131,6 +2148,9 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue_l1cache(
 }
 
 void ldst_unit::L1_latency_queue_cycle() {
+  // (Xavier port) retire one cycle of the 64-bit LSU serialization window.
+  // This function runs exactly once per ldst_unit::cycle().
+  if (m_l1_64bit_busy > 0) m_l1_64bit_busy--;
   for (unsigned int j = 0; j < m_config->m_L1D_config.l1_banks; j++) {
     if ((l1_latency_queue[j][0]) != NULL) {
       mem_fetch *mf_next = l1_latency_queue[j][0];
