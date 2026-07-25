@@ -2151,6 +2151,7 @@ void ldst_unit::L1_latency_queue_cycle() {
   // (Xavier port) retire one cycle of the 64-bit LSU serialization window.
   // This function runs exactly once per ldst_unit::cycle().
   if (m_l1_64bit_busy > 0) m_l1_64bit_busy--;
+  if (m_l2_64bit_busy > 0) m_l2_64bit_busy--;
   for (unsigned int j = 0; j < m_config->m_L1D_config.l1_banks; j++) {
     if ((l1_latency_queue[j][0]) != NULL) {
       mem_fetch *mf_next = l1_latency_queue[j][0];
@@ -2318,6 +2319,12 @@ bool ldst_unit::memory_cycle(warp_inst_t &inst,
       if (inst.accessq_empty()) {
         break;
       }
+      // (Xavier port) still draining a previously-issued 64-bit global bypass
+      // read: issue nothing more this cycle. accessq stays non-empty, so the
+      // COAL_STALL fallback below fires. Mirrors the L1 gate.
+      if (m_l2_64bit_busy > 0) {
+        break;
+      }
       const mem_access_t &access = inst.accessq_back();
       unsigned size = access.get_size() + control_size;
       // printf("Interconnect:Addr: %x, size=%d\n",access.get_addr(),size);
@@ -2339,6 +2346,17 @@ bool ldst_unit::memory_cycle(warp_inst_t &inst,
                                   m_core->get_gpu()->gpu_sim_cycle +
                                       m_core->get_gpu()->gpu_tot_sim_cycle);
         m_icnt->push(mf);
+        // (Xavier port) a 64-bit global bypass read occupies the LSU's 64-bit
+        // issue path for `mult` cycles rather than 1. m_inst is empty for
+        // writeback accesses (no originating instruction); guard before reading.
+        {
+          const unsigned mult =
+              m_memory_config->m_L2_config.m_global_64bit_port_multiplier;
+          if (mult > 1 && mf->get_access_type() == GLOBAL_ACC_R &&
+              !mf->get_inst().empty() && mf->get_inst().data_size == 8) {
+            m_l2_64bit_busy = mult - 1;
+          }
+        }
         inst.accessq_pop_back();
         // inst.clear_active( access.get_warp_mask() );
         if (inst.is_load()) {

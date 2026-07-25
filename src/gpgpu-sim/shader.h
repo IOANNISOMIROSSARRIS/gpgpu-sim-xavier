@@ -1480,6 +1480,10 @@ class ldst_unit : public pipelined_simd_unit {
   // (measured; absent on GV100, which this model was tuned against). 0 when
   // the multiplier is 1, i.e. for every non-Xavier config.
   unsigned m_l1_64bit_busy = 0;
+  // (Xavier port) same idea as m_l1_64bit_busy, but for global reads that BYPASS
+  // L1 (cache_op == CACHE_GLOBAL) and go straight to the interconnect toward L2.
+  // Separate counter so the L2 multiplier tunes independently of L1.
+  unsigned m_l2_64bit_busy = 0;
   void L1_latency_queue_cycle();
 };
 
