@@ -71,6 +71,10 @@ dram_t::dram_t(unsigned int partition_id, const memory_config *config,
   issued_total = 0;
   issued_total_row = 0;
   issued_total_col = 0;
+  pair_ineligible = 0;
+  pair_eligible = 0;
+  pair_found_loose = 0;
+  pair_found_strict = 0;
 
   CCDc = 0;
   RRDc = 0;
@@ -715,6 +719,14 @@ void dram_t::print(FILE *simFile) const {
           "\n------------------------------------------------------------------"
           "------\n");
 
+  printf("\nPair_Probe_eligible = %llu", pair_eligible);
+  printf("\nPair_Probe_ineligible = %llu", pair_ineligible);
+  printf("\nPair_Probe_found_loose = %llu", pair_found_loose);
+  printf("\nPair_Probe_found_strict = %llu", pair_found_strict);
+  printf("\nPair_Probe_rate_loose = %.6f",
+         pair_eligible ? (double)pair_found_loose / pair_eligible : 0.0);
+  printf("\nPair_Probe_rate_strict = %.6f",
+         pair_eligible ? (double)pair_found_strict / pair_eligible : 0.0);
   printf("\nRow_Buffer_Locality = %.6f", (float)hits_num / access_num);
   printf("\nRow_Buffer_Locality_read = %.6f", (float)hits_read_num / read_num);
   printf("\nRow_Buffer_Locality_write = %.6f",

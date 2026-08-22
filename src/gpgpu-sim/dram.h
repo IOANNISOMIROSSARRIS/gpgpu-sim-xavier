@@ -223,6 +223,12 @@ class dram_t {
   unsigned long long issued_total;
   unsigned long long issued_total_row;
   unsigned long long issued_total_col;
+    // --- sector pairing probe (instrumentation only, no behaviour change) ---
+  unsigned long long pair_ineligible;
+  unsigned long long pair_eligible;
+  unsigned long long pair_found_loose;
+  unsigned long long pair_found_strict;
+   //--- sector pairing probe (instrumentation only, no behaviour change) ---
   double write_to_read_ratio_blp_rw_average;
   unsigned long long bkgrp_parallsim_rw;
 

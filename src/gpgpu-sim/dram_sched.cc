@@ -155,6 +155,32 @@ dram_req_t *frfcfs_scheduler::schedule(unsigned bank, unsigned curr_row) {
   }
   std::list<dram_req_t *>::iterator next = m_current_last_row[bank]->back();
   dram_req_t *req = (*next);
+  // --- sector pairing probe --------------------------------------------
+  // Xavier's MC sends one command + one row address to both x16 sub-partitions
+  // (64 B) but supplies INDEPENDENT column addresses, so one command can serve
+  // two different 32 B sectors (Jetson AGX Xavier SoM datasheet, sec 1.3).
+  // GPGPU-Sim binds one request per command and discards the unrequested half.
+  // This measures how often pairing WOULD apply. It changes no behaviour.
+  {
+    const unsigned pp_half = m_config->dram_atom_size / 2;
+    if (req->nbytes > pp_half) {
+      m_dram->pair_ineligible++;
+    } else {
+      m_dram->pair_eligible++;
+      if (m_current_last_row[bank]->size() > 1) {
+        std::list<std::list<dram_req_t *>::iterator>::reverse_iterator pp_rit =
+            m_current_last_row[bank]->rbegin();
+        ++pp_rit;
+        dram_req_t *pp_partner = *(*pp_rit);
+        if (pp_partner && pp_partner != req && pp_partner->nbytes <= pp_half) {
+          m_dram->pair_found_loose++;
+          if (((pp_partner->addr / pp_half) & 1) != ((req->addr / pp_half) & 1))
+            m_dram->pair_found_strict++;
+        }
+      }
+    }
+  }
+  // ---------------------------------------------------------------------
 
   // rowblp stats
   m_dram->access_num++;
