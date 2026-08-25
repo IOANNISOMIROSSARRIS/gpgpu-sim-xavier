@@ -67,6 +67,7 @@ class dram_req_t {
   unsigned long long int addr;
   unsigned int insertion_time;
   class mem_fetch *data;
+  class dram_req_t *paired_with;  // co-scheduled sector in other sub-partition
   class gpgpu_sim *m_gpu;
 };
 
@@ -228,6 +229,8 @@ class dram_t {
   unsigned long long pair_eligible;
   unsigned long long pair_found_loose;
   unsigned long long pair_found_strict;
+  unsigned long long pair_issued;      // commands that carried two requests
+  unsigned long long pair_single;      // commands that carried one
    //--- sector pairing probe (instrumentation only, no behaviour change) ---
   double write_to_read_ratio_blp_rw_average;
   unsigned long long bkgrp_parallsim_rw;

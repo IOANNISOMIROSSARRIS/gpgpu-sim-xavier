@@ -75,6 +75,8 @@ dram_t::dram_t(unsigned int partition_id, const memory_config *config,
   pair_eligible = 0;
   pair_found_loose = 0;
   pair_found_strict = 0;
+  pair_issued = 0;
+  pair_single = 0;
 
   CCDc = 0;
   RRDc = 0;
@@ -246,6 +248,7 @@ dram_req_t::dram_req_t(class mem_fetch *mf, unsigned banks,
   addr = mf->get_addr();
   insertion_time = (unsigned)m_gpu->gpu_sim_cycle;
   rw = data->get_is_write() ? WRITE : READ;
+  paired_with = NULL;
 }
 
 void dram_t::push(class mem_fetch *data) {
@@ -302,18 +305,22 @@ void dram_t::cycle() {
       cmd->dqbytes += m_config->dram_atom_size;
 
       if (cmd->dqbytes >= cmd->nbytes) {
-        mem_fetch *data = cmd->data;
-        data->set_status(IN_PARTITION_MC_RETURNQ,
-                         m_gpu->gpu_sim_cycle + m_gpu->gpu_tot_sim_cycle);
-        if (data->get_access_type() != L1_WRBK_ACC &&
-            data->get_access_type() != L2_WRBK_ACC) {
-          data->set_reply();
-          returnq->push(data);
-        } else {
-          m_memory_partition_unit->set_done(data);
-          delete data;
+        for (dram_req_t *r = cmd; r != NULL;) {
+          mem_fetch *data = r->data;
+          data->set_status(IN_PARTITION_MC_RETURNQ,
+                           m_gpu->gpu_sim_cycle + m_gpu->gpu_tot_sim_cycle);
+          if (data->get_access_type() != L1_WRBK_ACC &&
+              data->get_access_type() != L2_WRBK_ACC) {
+            data->set_reply();
+            returnq->push(data);
+          } else {
+            m_memory_partition_unit->set_done(data);
+            delete data;
+          }
+          dram_req_t *nxt = r->paired_with;
+          delete r;
+          r = nxt;
         }
-        delete cmd;
       }
 #ifdef DRAM_VIEWCMD
       printf("\n");
@@ -719,6 +726,12 @@ void dram_t::print(FILE *simFile) const {
           "\n------------------------------------------------------------------"
           "------\n");
 
+  printf("\nPair_Issued = %llu", pair_issued);
+  printf("\nPair_Single = %llu", pair_single);
+  printf("\nPair_Issue_rate = %.6f",
+         (pair_issued + pair_single)
+             ? (double)pair_issued / (pair_issued + pair_single)
+             : 0.0);
   printf("\nPair_Probe_eligible = %llu", pair_eligible);
   printf("\nPair_Probe_ineligible = %llu", pair_ineligible);
   printf("\nPair_Probe_found_loose = %llu", pair_found_loose);

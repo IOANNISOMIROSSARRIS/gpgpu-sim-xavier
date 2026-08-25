@@ -26,6 +26,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <iterator>
 #include "dram_sched.h"
 #include "../abstract_hardware_model.h"
 #include "gpu-misc.h"
@@ -200,6 +201,49 @@ dram_req_t *frfcfs_scheduler::schedule(unsigned bank, unsigned curr_row) {
 
   m_stats->concurrent_row_access[m_dram->id][bank]++;
   m_stats->row_access[m_dram->id][bank]++;
+
+  // --- sector pairing ---------------------------------------------------
+  // Xavier's MC sends one command + one row address to both x16 sub-partitions
+  // but INDEPENDENT column addresses, so one 64 B command can carry two
+  // different 32 B sectors of the open row. Find a partner and remove it from
+  // the queue in the same pass; both retire together in dram_t::cycle().
+  // Must run BEFORE the primary's removal empties the bin.
+  dram_req_t *sp_partner = NULL;
+  if (m_config->dram_sector_pairing) {
+    const unsigned sp_half = m_config->dram_atom_size / 2;
+    if (req->nbytes <= sp_half && m_current_last_row[bank]->size() > 1) {
+      std::list<std::list<dram_req_t *>::iterator>::reverse_iterator sp_it =
+          m_current_last_row[bank]->rbegin();
+      ++sp_it;  // skip the primary at back()
+      for (; sp_it != m_current_last_row[bank]->rend(); ++sp_it) {
+        dram_req_t *cand = *(*sp_it);
+        if (!cand || cand == req) continue;
+        if (cand->nbytes > sp_half) continue;
+        if (cand->data->is_write() != req->data->is_write()) continue;
+        if (((cand->addr / sp_half) & 1) == ((req->addr / sp_half) & 1)) continue;
+        // unlink: bin entry, queue entry, pending count
+        std::list<dram_req_t *>::iterator cand_qit = *sp_it;
+        m_current_last_row[bank]->erase(std::next(sp_it).base());
+        m_current_queue[bank].erase(cand_qit);
+        if (m_config->seperate_write_queue_enabled && cand->data->is_write()) {
+          assert(m_num_write_pending != 0);
+          m_num_write_pending--;
+        } else {
+          assert(m_num_pending != 0);
+          m_num_pending--;
+        }
+        sp_partner = cand;
+        break;
+      }
+    }
+  }
+  req->paired_with = sp_partner;
+  if (sp_partner)
+    m_dram->pair_issued++;
+  else
+    m_dram->pair_single++;
+  // ----------------------------------------------------------------------
+
   m_current_last_row[bank]->pop_back();
 
   m_current_queue[bank].erase(next);

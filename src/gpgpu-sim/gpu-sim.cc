@@ -283,6 +283,13 @@ void memory_config::reg_options(class OptionParser *opp) {
   option_parser_register(opp, "-gpgpu_dram_return_queue_size", OPT_INT32,
                          &gpgpu_dram_return_queue_size,
                          "0 = unlimited (default); # entries per chip", "0");
+  option_parser_register(
+      opp, "-gpgpu_dram_sector_pairing", OPT_UINT32, &dram_sector_pairing,
+      "Service two independent sector requests per DRAM column command when\n"
+      "they share a row and occupy different sub-partitions (Xavier MC\n"
+      "supplies independent column addresses to each x16 sub-partition).\n"
+      "0 = off (default, stock behaviour), 1 = on",
+      "0");
   option_parser_register(opp, "-gpgpu_dram_buswidth", OPT_UINT32, &busW,
                          "default = 4 bytes (8 bytes per cycle at DDR)", "4");
   option_parser_register(
